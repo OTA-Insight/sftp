@@ -23,6 +23,7 @@ type responsePacket interface {
 type hasPath interface {
 	requestPacket
 	getPath() string
+	setPath(path string)
 }
 
 type hasHandle interface {
@@ -51,6 +52,26 @@ func (p sshFxpOpendirPacket) getPath() string  { return p.Path }
 func (p sshFxpOpenPacket) getPath() string     { return p.Path }
 
 func (p sshFxpExtendedPacketPosixRename) getPath() string { return p.Oldpath }
+
+func (p *sshFxpLstatPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpStatPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpRmdirPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpReadlinkPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpRealpathPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpMkdirPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpSetstatPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpStatvfsPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpOpendirPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpOpenPacket) setPath(path string) { p.Path = path }
+func (p *sshFxpRemovePacket) setPath(path string) { p.Filename = path }
+func (p *sshFxpRenamePacket) setPath(oldPath, newPath string) {
+	p.Oldpath = oldPath
+	p.Newpath = newPath
+	}
+func (p *sshFxpSymlinkPacket) setPath(targetPath, linkPath string) {
+	p.Targetpath = targetPath
+	p.Linkpath = linkPath
+	}
 
 // hasHandle
 func (p sshFxpFstatPacket) getHandle() string    { return p.Handle }

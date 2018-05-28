@@ -65,6 +65,27 @@ func (svr *Server) getHandle(handle string) (*os.File, bool) {
 	return f, ok
 }
 
+func (svr *Server) path(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(svr.serverRoot, p)
+}
+
+// modifyWorkingPaths modifies the path(s) of request packets to
+// take into account the serverRoot directory
+func (svr *Server) modifyWorkingPaths(pkt requestPacket) requestPacket{
+	switch pkt := pkt.(type) {
+	case *sshFxpRenamePacket:
+		pkt.setPath(svr.path(pkt.Oldpath),svr.path(pkt.Newpath))
+	case *sshFxpSymlinkPacket:
+		pkt.setPath(svr.path(pkt.Targetpath),svr.path(pkt.Linkpath))
+	case hasPath:
+		pkt.setPath(svr.path(pkt.getPath()))
+	}
+	return pkt
+}
+
 type serverRespondablePacket interface {
 	encoding.BinaryUnmarshaler
 	id() uint32
@@ -135,6 +156,7 @@ type rxPacket struct {
 // Up to N parallel servers
 func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 	for pkt := range pktChan {
+		pkt := svr.modifyWorkingPaths(pkt)
 
 		// permission checks
 		permiss := true
@@ -187,6 +209,7 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 }
 
 func handlePacket(s *Server, p interface{}) error {
+
 	switch p := p.(type) {
 	case *sshFxInitPacket:
 		return s.sendPacket(sshFxVersionPacket{sftpProtocolVersion, nil})
