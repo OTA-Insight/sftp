@@ -23,7 +23,14 @@ type responsePacket interface {
 type hasPath interface {
 	requestPacket
 	getPath() string
+}
+
+// setPath is an interface which is used to modify the path contained in a packet
+//TODO: find a cleaner solution for this
+type setPath interface {
+	requestPacket
 	setPath(path string)
+	getPath() string
 }
 
 type hasHandle interface {

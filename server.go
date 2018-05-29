@@ -82,7 +82,7 @@ func (svr *Server) modifyWorkingPaths(pkt requestPacket) requestPacket{
 	case *sshFxpSymlinkPacket:
 		pkt.Linkpath = svr.path(pkt.Linkpath)
 		pkt.Targetpath = svr.path(pkt.Targetpath)
-	case hasPath:
+	case setPath:
 		pkt.setPath(svr.path(pkt.getPath()))
 	}
 	return pkt
