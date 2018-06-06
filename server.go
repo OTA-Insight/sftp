@@ -28,14 +28,16 @@ const (
 // as specified at http://tools.ietf.org/html/draft-ietf-secsh-filexfer-02
 type Server struct {
 	*serverConn
-	debugStream   io.Writer
-	readOnly      bool
-	pktMgr        *packetManager
-	openFiles     map[string]*os.File
-	openFilesLock sync.RWMutex
-	handleCount   int
-	maxTxPacket   uint32
-	serverRoot    string
+	debugStream         io.Writer
+	readOnly            bool
+	pktMgr              *packetManager
+	OpenFiles           map[string]*os.File
+	openFilesLock       sync.RWMutex
+	handleCount         int
+	maxTxPacket         uint32
+	serverRoot          string
+	closeHandleCallback func(file *os.File) error
+	openHandleCallback  func(file *os.File, osFlags int) error
 }
 
 func (svr *Server) nextHandle(f *os.File) string {
@@ -43,15 +45,15 @@ func (svr *Server) nextHandle(f *os.File) string {
 	defer svr.openFilesLock.Unlock()
 	svr.handleCount++
 	handle := strconv.Itoa(svr.handleCount)
-	svr.openFiles[handle] = f
+	svr.OpenFiles[handle] = f
 	return handle
 }
 
 func (svr *Server) closeHandle(handle string) error {
 	svr.openFilesLock.Lock()
 	defer svr.openFilesLock.Unlock()
-	if f, ok := svr.openFiles[handle]; ok {
-		delete(svr.openFiles, handle)
+	if f, ok := svr.OpenFiles[handle]; ok {
+		delete(svr.OpenFiles, handle)
 		return f.Close()
 	}
 
@@ -61,7 +63,7 @@ func (svr *Server) closeHandle(handle string) error {
 func (svr *Server) getHandle(handle string) (*os.File, bool) {
 	svr.openFilesLock.RLock()
 	defer svr.openFilesLock.RUnlock()
-	f, ok := svr.openFiles[handle]
+	f, ok := svr.OpenFiles[handle]
 	return f, ok
 }
 
@@ -110,7 +112,7 @@ func NewServer(rwc io.ReadWriteCloser, options ...ServerOption) (*Server, error)
 		serverConn:  svrConn,
 		debugStream: ioutil.Discard,
 		pktMgr:      newPktMgr(svrConn),
-		openFiles:   make(map[string]*os.File),
+		OpenFiles:   make(map[string]*os.File),
 		maxTxPacket: 1 << 15,
 	}
 
@@ -150,6 +152,19 @@ func RootDirectory(root string) ServerOption {
 	}
 }
 
+func CloseHandleCallback(f func(file *os.File) error) ServerOption{
+	return func(s *Server) error{
+		s.closeHandleCallback = f
+		return nil
+	}
+}
+
+func OpenHandleCallback(f func(file *os.File, osFlags int) error) ServerOption{
+	return func(s *Server) error{
+		s.openHandleCallback = f
+		return nil
+	}
+}
 type rxPacket struct {
 	pktType  fxp
 	pktBytes []byte
@@ -267,6 +282,9 @@ func handlePacket(s *Server, p interface{}) error {
 		err := os.Symlink(p.Targetpath, p.Linkpath)
 		return s.sendError(p, err)
 	case *sshFxpClosePacket:
+		if err := s.closeHandleCallback(s.OpenFiles[p.Handle]);err != nil{
+			return s.sendError(p,err)
+		}
 		return s.sendError(p, s.closeHandle(p.Handle))
 	case *sshFxpReadlinkPacket:
 		f, err := os.Readlink(p.Path)
@@ -383,7 +401,7 @@ func (svr *Server) Serve() error {
 	wg.Wait()      // wait for all workers to exit
 
 	// close any still-open files
-	for handle, file := range svr.openFiles {
+	for handle, file := range svr.OpenFiles {
 		fmt.Fprintf(svr.debugStream, "sftp server file with handle %q left open: %v\n", handle, file.Name())
 		file.Close()
 	}
@@ -463,13 +481,16 @@ func (p sshFxpOpenPacket) respond(svr *Server) error {
 	if p.hasPflags(ssh_FXF_EXCL) {
 		osFlags |= os.O_EXCL
 	}
-
 	f, err := os.OpenFile(p.Path, osFlags, 0644)
 	if err != nil {
 		return svr.sendError(p, err)
 	}
 
 	handle := svr.nextHandle(f)
+	if err := svr.openHandleCallback(svr.OpenFiles[handle], osFlags); err != nil {
+		svr.closeHandle(handle)
+		return svr.sendError(p, err)
+	}
 	return svr.sendPacket(sshFxpHandlePacket{p.ID, handle})
 }
 
