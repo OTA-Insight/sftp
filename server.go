@@ -283,10 +283,14 @@ func handlePacket(s *Server, p interface{}) error {
 		err := os.Symlink(p.Targetpath, p.Linkpath)
 		return s.sendError(p, err)
 	case *sshFxpClosePacket:
-		if err := s.closeHandleCallback(s.OpenFiles[p.Handle]); err != nil {
-			return s.sendError(p, err)
+		errCallback := s.closeHandleCallback(s.OpenFiles[p.Handle])
+		// allow the server to close the handle even if the callback failed.
+		errClose := s.closeHandle(p.Handle)
+		if errCallback == nil{
+			return s.sendError(p,errClose)
 		}
-		return s.sendError(p, s.closeHandle(p.Handle))
+		return s.sendError(p, errCallback)
+
 	case *sshFxpReadlinkPacket:
 		f, err := os.Readlink(p.Path)
 		if err != nil {
