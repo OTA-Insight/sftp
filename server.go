@@ -76,7 +76,7 @@ func (svr *Server) path(p string) string {
 
 // modifyWorkingPaths modifies the path(s) of request packets to
 // take into account the serverRoot directory
-func (svr *Server) modifyWorkingPaths(pkt requestPacket) requestPacket{
+func (svr *Server) modifyWorkingPaths(pkt requestPacket) requestPacket {
 	switch pkt := pkt.(type) {
 	case *sshFxpRenamePacket:
 		pkt.Newpath = svr.path(pkt.Newpath)
@@ -152,19 +152,20 @@ func RootDirectory(root string) ServerOption {
 	}
 }
 
-func CloseHandleCallback(f func(file *os.File) error) ServerOption{
-	return func(s *Server) error{
+func CloseHandleCallback(f func(file *os.File) error) ServerOption {
+	return func(s *Server) error {
 		s.closeHandleCallback = f
 		return nil
 	}
 }
 
-func OpenHandleCallback(f func(file *os.File, osFlags int) error) ServerOption{
-	return func(s *Server) error{
+func OpenHandleCallback(f func(file *os.File, osFlags int) error) ServerOption {
+	return func(s *Server) error {
 		s.openHandleCallback = f
 		return nil
 	}
 }
+
 type rxPacket struct {
 	pktType  fxp
 	pktBytes []byte
@@ -211,7 +212,7 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 		// If server is operating read-only and a write operation is requested
 		// or a restricted file is requested
 		// return permission denied.
-		if !permiss || (!readonly && svr.readOnly){
+		if !permiss || (!readonly && svr.readOnly) {
 			if err := svr.sendError(pkt, syscall.EPERM); err != nil {
 				return errors.Wrap(err, "failed to send read only packet response")
 			}
@@ -282,8 +283,8 @@ func handlePacket(s *Server, p interface{}) error {
 		err := os.Symlink(p.Targetpath, p.Linkpath)
 		return s.sendError(p, err)
 	case *sshFxpClosePacket:
-		if err := s.closeHandleCallback(s.OpenFiles[p.Handle]);err != nil{
-			return s.sendError(p,err)
+		if err := s.closeHandleCallback(s.OpenFiles[p.Handle]); err != nil {
+			return s.sendError(p, err)
 		}
 		return s.sendError(p, s.closeHandle(p.Handle))
 	case *sshFxpReadlinkPacket:
