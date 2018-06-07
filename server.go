@@ -113,6 +113,13 @@ func NewServer(rwc io.ReadWriteCloser, options ...ServerOption) (*Server, error)
 		debugStream: ioutil.Discard,
 		pktMgr:      newPktMgr(svrConn),
 		OpenFiles:   make(map[string]*os.File),
+		openHandleCallback: func(file *os.File, osFlags int) error {
+			return nil
+		},
+		closeHandleCallback: func(file *os.File) error {
+			return nil
+		},
+		serverRoot:"",
 		maxTxPacket: 1 << 15,
 	}
 
