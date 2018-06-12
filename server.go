@@ -30,6 +30,7 @@ type Server struct {
 	*serverConn
 	debugStream         io.Writer
 	readOnly            bool
+	uploadOnly          bool
 	pktMgr              *packetManager
 	OpenFiles           map[string]*os.File
 	openFilesLock       sync.RWMutex
@@ -119,7 +120,7 @@ func NewServer(rwc io.ReadWriteCloser, options ...ServerOption) (*Server, error)
 		closeHandleCallback: func(file *os.File) error {
 			return nil
 		},
-		serverRoot:"",
+		serverRoot:  "",
 		maxTxPacket: 1 << 15,
 	}
 
@@ -127,6 +128,10 @@ func NewServer(rwc io.ReadWriteCloser, options ...ServerOption) (*Server, error)
 		if err := o(s); err != nil {
 			return nil, err
 		}
+	}
+
+	if s.readOnly && s.uploadOnly {
+		return s, fmt.Errorf("server cannot be readonly and uploadonly at the same time")
 	}
 
 	return s, nil
@@ -147,6 +152,18 @@ func WithDebug(w io.Writer) ServerOption {
 func ReadOnly() ServerOption {
 	return func(s *Server) error {
 		s.readOnly = true
+		return nil
+	}
+}
+
+// UploadOnly configures a Server to only allow
+// - Opening of a file
+// - Writing to that file
+// - Setting the stats of that file
+// - No other operations are supported
+func UploadOnly() ServerOption {
+	return func(s *Server) error {
+		s.uploadOnly = true
 		return nil
 	}
 }
@@ -214,12 +231,36 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 			}
 		}
 
-		//TODO: check writeonly
+		//simple upload restricted
+		uploadRestricted := true
+		if permiss {
+			switch pkt := pkt.(type) {
+			case *sshFxpOpenPacket:
+				uploadRestricted = !pkt.hasPflags(ssh_FXF_READ)
+			case
+				*sshFxpReadPacket,
+				*sshFxpReaddirPacket,
+				*sshFxpStatPacket,
+				*sshFxpLstatPacket,
+				*sshFxpFstatPacket,
+				*sshFxpReadlinkPacket,
+				*sshFxpOpendirPacket,
+				*sshFxpRemovePacket,
+				*sshFxpMkdirPacket,
+				*sshFxpRmdirPacket,
+				*sshFxpRenamePacket:
+				uploadRestricted = false
+			case *sshFxpExtendedPacket:
+				//block all extended packets for now
+				uploadRestricted = false
+			}
+		}
 
 		// If server is operating read-only and a write operation is requested
+		// or if server is operating upload-only and a read operation is requested
 		// or a restricted file is requested
 		// return permission denied.
-		if !permiss || (!readonly && svr.readOnly) {
+		if !permiss || (!readonly && svr.readOnly) || (!uploadRestricted && svr.uploadOnly) {
 			if err := svr.sendError(pkt, syscall.EPERM); err != nil {
 				return errors.Wrap(err, "failed to send read only packet response")
 			}
@@ -293,8 +334,8 @@ func handlePacket(s *Server, p interface{}) error {
 		errCallback := s.closeHandleCallback(s.OpenFiles[p.Handle])
 		// allow the server to close the handle even if the callback failed.
 		errClose := s.closeHandle(p.Handle)
-		if errCallback == nil{
-			return s.sendError(p,errClose)
+		if errCallback == nil {
+			return s.sendError(p, errClose)
 		}
 		return s.sendError(p, errCallback)
 
