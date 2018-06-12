@@ -158,6 +158,7 @@ func ReadOnly() ServerOption {
 
 // UploadOnly configures a Server to only allow
 // - Opening of a file
+// - Reading the stats (Certain clients check the path before writing)
 // - Writing to that file
 // - Setting the stats of that file
 // - No other operations are supported
@@ -240,9 +241,6 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 			case
 				*sshFxpReadPacket,
 				*sshFxpReaddirPacket,
-				*sshFxpStatPacket,
-				*sshFxpLstatPacket,
-				*sshFxpFstatPacket,
 				*sshFxpReadlinkPacket,
 				*sshFxpOpendirPacket,
 				*sshFxpRemovePacket,
