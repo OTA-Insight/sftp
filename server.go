@@ -395,6 +395,7 @@ func handlePacket(s *Server, p interface{}) error {
 		}
 
 		_, err := f.WriteAt(p.Data, int64(p.Offset))
+		f.Sync()
 		return s.sendError(p, err)
 	case serverRespondablePacket:
 		err := p.respond(s)
