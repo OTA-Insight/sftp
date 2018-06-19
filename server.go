@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	SftpServerWorkerCount = 8
+	SftpServerWorkerCount = 1
 )
 
 // Server is an SSH File Transfer Protocol (sftp) server.
