@@ -244,7 +244,6 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 				*sshFxpReadlinkPacket,
 				*sshFxpOpendirPacket,
 				*sshFxpRemovePacket,
-				*sshFxpMkdirPacket,
 				*sshFxpRmdirPacket,
 				*sshFxpRenamePacket:
 				uploadRestricted = false
