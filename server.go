@@ -69,9 +69,6 @@ func (svr *Server) getHandle(handle string) (*os.File, bool) {
 }
 
 func (svr *Server) path(p string) string {
-	if filepath.IsAbs(p) {
-		return p
-	}
 	return filepath.Join(svr.serverRoot, p)
 }
 
@@ -120,7 +117,7 @@ func NewServer(rwc io.ReadWriteCloser, options ...ServerOption) (*Server, error)
 		closeHandleCallback: func(file *os.File) error {
 			return nil
 		},
-		serverRoot:  "",
+		serverRoot:  "/",
 		maxTxPacket: 1 << 15,
 	}
 
@@ -199,8 +196,7 @@ type rxPacket struct {
 // Up to N parallel servers
 func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 	for pkt := range pktChan {
-		pkt := svr.modifyWorkingPaths(pkt)
-
+		pkt = svr.modifyWorkingPaths(pkt)
 		// permission checks
 		permiss := true
 		if stat, err := os.Stat(svr.serverRoot); err == nil && stat.IsDir() {
@@ -240,9 +236,7 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 				uploadRestricted = !pkt.hasPflags(ssh_FXF_READ)
 			case
 				*sshFxpReadPacket,
-				*sshFxpReaddirPacket,
 				*sshFxpReadlinkPacket,
-				*sshFxpOpendirPacket,
 				*sshFxpRemovePacket,
 				*sshFxpRmdirPacket,
 				*sshFxpRenamePacket:
@@ -353,6 +347,10 @@ func handlePacket(s *Server, p interface{}) error {
 
 	case *sshFxpRealpathPacket:
 		f, err := filepath.Abs(p.Path)
+		if err != nil {
+			return s.sendError(p, err)
+		}
+		f,err = filepath.Rel(s.serverRoot,f)
 		if err != nil {
 			return s.sendError(p, err)
 		}
