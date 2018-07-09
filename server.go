@@ -31,6 +31,7 @@ type Server struct {
 	debugStream         io.Writer
 	readOnly            bool
 	uploadOnly          bool
+	timeout             time.Duration
 	pktMgr              *packetManager
 	OpenFiles           map[string]*os.File
 	openFilesLock       sync.RWMutex
@@ -109,6 +110,7 @@ func NewServer(rwc io.ReadWriteCloser, options ...ServerOption) (*Server, error)
 	s := &Server{
 		serverConn:  svrConn,
 		debugStream: ioutil.Discard,
+		timeout:     time.Hour,
 		pktMgr:      newPktMgr(svrConn),
 		OpenFiles:   make(map[string]*os.File),
 		openHandleCallback: func(file *os.File, osFlags int) error {
@@ -170,6 +172,14 @@ func UploadOnly() ServerOption {
 func RootDirectory(root string) ServerOption {
 	return func(s *Server) error {
 		s.serverRoot = root
+		return nil
+	}
+}
+
+// TimeoutDuration configures the duration after which an idle client is disconnected
+func TimeoutDuration(timeout time.Duration) ServerOption {
+	return func(s *Server) error {
+		s.timeout = timeout
 		return nil
 	}
 }
@@ -350,7 +360,7 @@ func handlePacket(s *Server, p interface{}) error {
 		if err != nil {
 			return s.sendError(p, err)
 		}
-		f,err = filepath.Rel(s.serverRoot,f)
+		f, err = filepath.Rel(s.serverRoot, f)
 		if err != nil {
 			return s.sendError(p, err)
 		}
@@ -402,7 +412,7 @@ func handlePacket(s *Server, p interface{}) error {
 }
 
 // Serve serves SFTP connections until the streams stop or the SFTP subsystem
-// is stopped.
+// is stopped or client times out
 func (svr *Server) Serve() error {
 	var wg sync.WaitGroup
 	runWorker := func(ch requestChan) {
@@ -420,29 +430,61 @@ func (svr *Server) Serve() error {
 	var pkt requestPacket
 	var pktType uint8
 	var pktBytes []byte
-	for {
-		pktType, pktBytes, err = svr.recvPacket()
-		if err != nil {
-			break
-		}
 
-		pkt, err = makePacket(rxPacket{fxp(pktType), pktBytes})
-		if err != nil {
-			switch errors.Cause(err) {
-			case errUnknownExtendedPacket:
-				if err := svr.serverConn.sendError(pkt, ErrSshFxOpUnsupported); err != nil {
-					debug("failed to send err packet: %v", err)
+	type pktData struct {
+		pktType  uint8
+		pktBytes []byte
+		err      error
+	}
+
+	pktDataChan := make(chan pktData, 1)
+	quit := make(chan bool)
+
+	go func(c chan pktData, quit chan bool) {
+		for {
+			select {
+			case <-quit:
+				close(pktDataChan)
+				return
+			default:
+				pktType, pktBytes, err = svr.recvPacket()
+				c <- pktData{pktType, pktBytes, err}
+			}
+		}
+	}(pktDataChan, quit)
+
+L:
+	for {
+		select {
+		case data := <-pktDataChan:
+			if data.err != nil {
+				break L
+			}
+			pkt, err = makePacket(rxPacket{fxp(data.pktType), data.pktBytes})
+			if err != nil {
+				switch errors.Cause(err) {
+				case errUnknownExtendedPacket:
+					if err := svr.serverConn.sendError(pkt, ErrSshFxOpUnsupported); err != nil {
+						debug("failed to send err packet: %v", err)
+						svr.conn.Close() // shuts down recvPacket
+						break
+					}
+				default:
+					debug("makePacket err: %v", err)
+					close(quit)
 					svr.conn.Close() // shuts down recvPacket
 					break
 				}
-			default:
-				debug("makePacket err: %v", err)
-				svr.conn.Close() // shuts down recvPacket
-				break
 			}
-		}
 
-		pktChan <- pkt
+			pktChan <- pkt
+
+		case <-time.After(svr.timeout):
+			err = fmt.Errorf("client timed out")
+			close(quit)
+			svr.conn.Close() // shuts down recvPacket
+			break L
+		}
 	}
 
 	close(pktChan) // shuts down sftpServerWorkers
