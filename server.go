@@ -492,6 +492,7 @@ L:
 
 	// close any still-open files
 	for handle, file := range svr.OpenFiles {
+		//force call the closeHandleCallback to clean up before closing the file handle
 		svr.closeHandleCallback(file)
 		fmt.Fprintf(svr.debugStream, "sftp server file with handle %q left open: %v\n", handle, file.Name())
 		file.Close()
