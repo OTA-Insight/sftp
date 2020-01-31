@@ -455,8 +455,12 @@ func (svr *Server) Serve() error {
 
 L:
 	for {
+		// Start timer
+		timer := time.NewTimer(svr.timeout)
 		select {
 		case data := <-pktDataChan:
+			// Stop timer in case a packet was received.
+			timer.Stop()
 			if data.err != nil {
 				break L
 			}
@@ -479,7 +483,7 @@ L:
 
 			pktChan <- pkt
 
-		case <-time.After(svr.timeout):
+		case <-timer.C:
 			err = fmt.Errorf("client timed out")
 			close(quit)
 			svr.conn.Close() // shuts down recvPacket
