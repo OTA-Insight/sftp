@@ -277,7 +277,7 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 }
 
 func handlePacket(s *Server, p interface{}) error {
-	fmt.Fprintf(svr.debugStream, "handlePacket %v\n", p.(type))
+	fmt.Fprintf(s.debugStream, "handlePacket %T\n", p)
 	switch p := p.(type) {
 	case *sshFxInitPacket:
 		return s.sendPacket(sshFxVersionPacket{sftpProtocolVersion, nil})
