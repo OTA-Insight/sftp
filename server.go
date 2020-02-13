@@ -261,6 +261,7 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 		// or if server is operating upload-only and a read operation is requested
 		// or a restricted file is requested
 		// return permission denied.
+		fmt.Fprintf(svr.debugStream, "Permiss %v\n", permiss)
 		if !permiss || (!readonly && svr.readOnly) || (!uploadRestricted && svr.uploadOnly) {
 			if err := svr.sendError(pkt, syscall.EPERM); err != nil {
 				return errors.Wrap(err, "failed to send read only packet response")
@@ -276,7 +277,7 @@ func (svr *Server) sftpServerWorker(pktChan chan requestPacket) error {
 }
 
 func handlePacket(s *Server, p interface{}) error {
-
+	fmt.Fprintf(svr.debugStream, "handlePacket %v\n", p.(type))
 	switch p := p.(type) {
 	case *sshFxInitPacket:
 		return s.sendPacket(sshFxVersionPacket{sftpProtocolVersion, nil})
